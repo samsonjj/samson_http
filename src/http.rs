@@ -5,7 +5,9 @@ use std::net::TcpStream;
 
 use crate::util::{self, crack};
 
-fn http_err(msg: &str) -> Error {
+use url::Url;
+
+pub fn http_err(msg: &str) -> Error {
     Error::new(ErrorKind::Other, msg)
 }
 
@@ -75,7 +77,7 @@ impl Response {
 #[derive(Clone, Debug)]
 pub struct Request {
     pub method: String,
-    pub uri: String,
+    pub uri: Url,
     pub version: String,
     pub phrase: String,
     pub headers: HashMap<String, String>,
@@ -86,7 +88,7 @@ impl Request {
     pub fn new() -> Self {
         Self {
             method: String::new(),
-            uri: String::new(),
+            uri: Url::try_from("http://test.com").unwrap(),
             version: String::new(),
             phrase: String::new(),
             headers: HashMap::new(),
@@ -109,7 +111,7 @@ impl Request {
             return Err(http_err("invalid http method"));
         }
 
-        request.uri = crack!(parts.next(), http_err("missing request uri")).to_string();
+        let uri = crack!(parts.next(), http_err("missing request uri"));
         request.version = crack!(parts.next(), http_err("missing request version")).to_string();
 
         // PARSE HEADERS
@@ -125,6 +127,16 @@ impl Request {
                 crack!(iter.next(), http_err("missing header value")).to_owned(),
             );
         }
+
+        // supplement uri
+        let host = &request
+            .headers
+            .get("Host")
+            .expect("missing Host header in request");
+        let host = Url::parse(&format!("http://{host}")).expect("failed to parse host from header");
+        request.uri = host
+            .join(uri)
+            .map_err(|_| http_err("failed to parse uri"))?;
 
         // PARSE BODY
 
